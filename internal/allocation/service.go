@@ -62,7 +62,7 @@ func (s *Service) Allocate(
 			return nil
 		}
 
-		expireLeases(state, now)
+		ExpireLeasesInState(state, now)
 		candidates := make([]domain.ResolverNode, 0)
 		for _, node := range state.Nodes {
 			if node.State != domain.NodeReady {
@@ -174,13 +174,16 @@ func (s *Service) ExpireDue(ctx context.Context) (int, error) {
 	now := s.clock.Now().UTC()
 	expired := 0
 	err := s.store.Write(ctx, func(state *domain.State) error {
-		expired = expireLeases(state, now)
+		expired = ExpireLeasesInState(state, now)
 		return nil
 	})
 	return expired, err
 }
 
-func expireLeases(state *domain.State, now time.Time) int {
+// ExpireLeasesInState marks every claimed lease that is due at now as
+// expired and returns its node to ready. It returns the number of leases
+// transitioned and may be composed into another service's transaction.
+func ExpireLeasesInState(state *domain.State, now time.Time) int {
 	count := 0
 	for leaseID, lease := range state.Leases {
 		if lease.State != domain.LeaseClaimed || lease.ExpiresAt.After(now) {

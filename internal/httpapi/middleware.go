@@ -7,16 +7,10 @@ import (
 	"time"
 
 	"solo-0014-zone-rollout-control/internal/domain"
+	"solo-0014-zone-rollout-control/internal/store"
 )
 
 type requestIDContextKey struct{}
-
-type snapshotStampContextKey struct{}
-
-type requestSnapshotStamp struct {
-	stamp domain.SnapshotStamp
-	valid bool
-}
 
 type trackingWriter struct {
 	http.ResponseWriter
@@ -54,11 +48,15 @@ func (s *Server) withRequestID(next http.Handler) http.Handler {
 
 func (s *Server) withSnapshotStamp(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		stamp, err := s.plans.SnapshotStamp(r.Context())
-		ctx := context.WithValue(r.Context(), snapshotStampContextKey{}, requestSnapshotStamp{
-			stamp: stamp,
-			valid: err == nil,
-		})
+		recorder := store.NewSnapshotRecorder()
+		// Seed the recorder with the current state so that requests which do
+		// not touch the store (e.g. /healthz) still report a stamp. Any store
+		// operation performed by the handler overwrites this seed with the
+		// stamp it actually observed or committed.
+		if stamp, err := s.plans.SnapshotStamp(r.Context()); err == nil {
+			recorder.Observe(stamp)
+		}
+		ctx := store.ContextWithSnapshotRecorder(r.Context(), recorder)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -105,9 +103,9 @@ func requestID(ctx context.Context) string {
 }
 
 func snapshotStamp(ctx context.Context) (domain.SnapshotStamp, bool) {
-	value, ok := ctx.Value(snapshotStampContextKey{}).(requestSnapshotStamp)
-	if !ok || !value.valid {
+	recorder := store.SnapshotRecorderFromContext(ctx)
+	if recorder == nil {
 		return domain.SnapshotStamp{}, false
 	}
-	return value.stamp, true
+	return recorder.Stamp()
 }

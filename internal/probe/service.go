@@ -2,31 +2,25 @@ package probe
 
 import (
 	"context"
-	"time"
 
+	"solo-0014-zone-rollout-control/internal/allocation"
 	"solo-0014-zone-rollout-control/internal/domain"
 	"solo-0014-zone-rollout-control/internal/platform"
 	"solo-0014-zone-rollout-control/internal/store"
 )
 
-type LeaseExpirer interface {
-	ExpireDue(context.Context) (int, error)
-}
-
 type Service struct {
-	store   *store.Store
-	clock   platform.Clock
-	ids     platform.IDGenerator
-	expirer LeaseExpirer
+	store *store.Store
+	clock platform.Clock
+	ids   platform.IDGenerator
 }
 
 func New(
 	stateStore *store.Store,
 	clock platform.Clock,
 	ids platform.IDGenerator,
-	expirer LeaseExpirer,
 ) *Service {
-	return &Service{store: stateStore, clock: clock, ids: ids, expirer: expirer}
+	return &Service{store: stateStore, clock: clock, ids: ids}
 }
 
 func (s *Service) Submit(
@@ -38,12 +32,13 @@ func (s *Service) Submit(
 	if err := domain.ValidateProbeInput(input, now); err != nil {
 		return domain.Probe{}, err
 	}
-	if _, err := s.expirer.ExpireDue(ctx); err != nil {
-		return domain.Probe{}, err
-	}
 	fingerprint := domain.ProbeFingerprint(leaseID, input)
 	var result domain.Probe
 	err := s.store.Write(ctx, func(state *domain.State) error {
+		// Expire due leases inside this same transaction so one request can
+		// advance the generation at most once, and a request that later fails
+		// validation never leaves an expiry-only commit behind.
+		allocation.ExpireLeasesInState(state, now)
 		lease, ok := state.Leases[leaseID]
 		if !ok {
 			return domain.NotFound("lease", leaseID)
@@ -126,8 +121,4 @@ func (s *Service) Submit(
 		return nil
 	})
 	return result, err
-}
-
-func pointer(value time.Time) *time.Time {
-	return &value
 }

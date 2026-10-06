@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -51,16 +52,7 @@ func (s *Store) Revision() uint64 {
 	return s.state.Revision
 }
 
-func (s *Store) SnapshotStamp(ctx context.Context) (domain.SnapshotStamp, error) {
-	if err := ctx.Err(); err != nil {
-		return domain.SnapshotStamp{}, err
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := ctx.Err(); err != nil {
-		return domain.SnapshotStamp{}, err
-	}
-	state := s.state
+func stampOf(state domain.State) domain.SnapshotStamp {
 	return domain.SnapshotStamp{
 		Revision:    state.Revision,
 		Plans:       len(state.Plans),
@@ -71,7 +63,23 @@ func (s *Store) SnapshotStamp(ctx context.Context) (domain.SnapshotStamp, error)
 		Probes:      len(state.Probes),
 		Assessments: len(state.Assessments),
 		AuditEvents: len(state.AuditEvents),
-	}, nil
+	}
+}
+
+func (s *Store) SnapshotStamp(ctx context.Context) (domain.SnapshotStamp, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.SnapshotStamp{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return domain.SnapshotStamp{}, err
+	}
+	stamp := stampOf(s.state)
+	if recorder := snapshotRecorder(ctx); recorder != nil {
+		recorder.observe(stamp)
+	}
+	return stamp, nil
 }
 
 func (s *Store) Read(ctx context.Context, fn func(*domain.State) error) error {
@@ -82,6 +90,9 @@ func (s *Store) Read(ctx context.Context, fn func(*domain.State) error) error {
 	defer s.mu.RUnlock()
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if recorder := snapshotRecorder(ctx); recorder != nil {
+		recorder.observe(stampOf(s.state))
 	}
 	return fn(&s.state)
 }
@@ -117,6 +128,22 @@ func (s *Store) Write(ctx context.Context, fn func(*domain.State) error) error {
 	if err := fn(&next); err != nil {
 		return err
 	}
+	recorder := snapshotRecorder(ctx)
+	changed, err := stateChanged(&s.state, &next)
+	if err != nil {
+		return domain.NewError(domain.CodeStorageFailure, "could not compare state", map[string]any{
+			"reason": err.Error(),
+		})
+	}
+	if !changed {
+		// Idempotent replay, failed validation paths and idle expiry sweeps
+		// must not advance the generation: identical business content keeps
+		// the same revision.
+		if recorder != nil {
+			recorder.observe(stampOf(s.state))
+		}
+		return nil
+	}
 	next.SchemaVersion = schemaVersion
 	next.Revision = s.state.Revision + 1
 	if err := replaceFile(s.path, next); err != nil {
@@ -125,7 +152,33 @@ func (s *Store) Write(ctx context.Context, fn func(*domain.State) error) error {
 		})
 	}
 	s.state = next
+	if recorder != nil {
+		recorder.observe(stampOf(next))
+	}
 	return nil
+}
+
+// stateChanged compares the business content of two states, ignoring the
+// bookkeeping fields (revision, schema version). The comparison is done on
+// canonical JSON so map iteration order and nil/empty collections cannot
+// produce false positives.
+func stateChanged(before *domain.State, after *domain.State) (bool, error) {
+	beforePayload, err := businessSnapshot(before)
+	if err != nil {
+		return false, err
+	}
+	afterPayload, err := businessSnapshot(after)
+	if err != nil {
+		return false, err
+	}
+	return !bytes.Equal(beforePayload, afterPayload), nil
+}
+
+func businessSnapshot(state *domain.State) ([]byte, error) {
+	business := *state
+	business.SchemaVersion = 0
+	business.Revision = 0
+	return json.Marshal(business)
 }
 
 func copyState(source *domain.State) (domain.State, error) {
