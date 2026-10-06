@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -60,18 +61,7 @@ func (s *Store) SnapshotStamp(ctx context.Context) (domain.SnapshotStamp, error)
 	if err := ctx.Err(); err != nil {
 		return domain.SnapshotStamp{}, err
 	}
-	state := s.state
-	return domain.SnapshotStamp{
-		Revision:    state.Revision,
-		Plans:       len(state.Plans),
-		Revisions:   len(state.Revisions),
-		Nodes:       len(state.Nodes),
-		Leases:      len(state.Leases),
-		LeaseGroups: len(state.LeaseGroups),
-		Probes:      len(state.Probes),
-		Assessments: len(state.Assessments),
-		AuditEvents: len(state.AuditEvents),
-	}, nil
+	return stampOf(&s.state), nil
 }
 
 func (s *Store) Read(ctx context.Context, fn func(*domain.State) error) error {
@@ -83,6 +73,7 @@ func (s *Store) Read(ctx context.Context, fn func(*domain.State) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	recordStamp(ctx, &s.state)
 	return fn(&s.state)
 }
 
@@ -114,8 +105,27 @@ func (s *Store) Write(ctx context.Context, fn func(*domain.State) error) error {
 			"reason": err.Error(),
 		})
 	}
+	before, err := json.Marshal(next)
+	if err != nil {
+		return domain.NewError(domain.CodeStorageFailure, "could not encode state", map[string]any{
+			"reason": err.Error(),
+		})
+	}
 	if err := fn(&next); err != nil {
 		return err
+	}
+	after, err := json.Marshal(next)
+	if err != nil {
+		return domain.NewError(domain.CodeStorageFailure, "could not encode state", map[string]any{
+			"reason": err.Error(),
+		})
+	}
+	if bytes.Equal(before, after) {
+		// The transaction left the state untouched (for example an
+		// idempotent replay or an expiry sweep with nothing due): succeed
+		// without advancing the revision or rewriting the snapshot.
+		recordStamp(ctx, &s.state)
+		return nil
 	}
 	next.SchemaVersion = schemaVersion
 	next.Revision = s.state.Revision + 1
@@ -125,6 +135,7 @@ func (s *Store) Write(ctx context.Context, fn func(*domain.State) error) error {
 		})
 	}
 	s.state = next
+	recordStamp(ctx, &s.state)
 	return nil
 }
 

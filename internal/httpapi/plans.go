@@ -23,7 +23,7 @@ func (s *Server) createPlan(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusCreated, plan)
+	s.sendData(w, r, http.StatusCreated, plan)
 }
 
 func (s *Server) listPlans(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +46,7 @@ func (s *Server) listPlans(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusOK, page)
+	s.sendData(w, r, http.StatusOK, page)
 }
 
 func (s *Server) getPlan(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +55,7 @@ func (s *Server) getPlan(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusOK, result)
+	s.sendData(w, r, http.StatusOK, result)
 }
 
 func (s *Server) addRevision(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +69,7 @@ func (s *Server) addRevision(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusCreated, result)
+	s.sendData(w, r, http.StatusCreated, result)
 }
 
 func (s *Server) activatePlan(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +87,7 @@ func (s *Server) activatePlan(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusOK, result)
+	s.sendData(w, r, http.StatusOK, result)
 }
 
 func (s *Server) completePlan(w http.ResponseWriter, r *http.Request) {
@@ -105,5 +105,5 @@ func (s *Server) completePlan(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusOK, result)
+	s.sendData(w, r, http.StatusOK, result)
 }

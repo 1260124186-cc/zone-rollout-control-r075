@@ -7,16 +7,10 @@ import (
 	"time"
 
 	"solo-0014-zone-rollout-control/internal/domain"
+	"solo-0014-zone-rollout-control/internal/store"
 )
 
 type requestIDContextKey struct{}
-
-type snapshotStampContextKey struct{}
-
-type requestSnapshotStamp struct {
-	stamp domain.SnapshotStamp
-	valid bool
-}
 
 type trackingWriter struct {
 	http.ResponseWriter
@@ -52,13 +46,9 @@ func (s *Server) withRequestID(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) withSnapshotStamp(next http.Handler) http.Handler {
+func (s *Server) withStampRecorder(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		stamp, err := s.plans.SnapshotStamp(r.Context())
-		ctx := context.WithValue(r.Context(), snapshotStampContextKey{}, requestSnapshotStamp{
-			stamp: stamp,
-			valid: err == nil,
-		})
+		ctx := store.WithStampRecorder(r.Context(), store.NewStampRecorder())
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -102,12 +92,4 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 func requestID(ctx context.Context) string {
 	value, _ := ctx.Value(requestIDContextKey{}).(string)
 	return value
-}
-
-func snapshotStamp(ctx context.Context) (domain.SnapshotStamp, bool) {
-	value, ok := ctx.Value(snapshotStampContextKey{}).(requestSnapshotStamp)
-	if !ok || !value.valid {
-		return domain.SnapshotStamp{}, false
-	}
-	return value.stamp, true
 }

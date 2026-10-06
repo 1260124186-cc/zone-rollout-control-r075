@@ -19,7 +19,7 @@ func (s *Server) enrollNode(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusCreated, node)
+	s.sendData(w, r, http.StatusCreated, node)
 }
 
 func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
@@ -48,5 +48,5 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusOK, page)
+	s.sendData(w, r, http.StatusOK, page)
 }

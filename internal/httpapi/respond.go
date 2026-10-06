@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 
 	"solo-0014-zone-rollout-control/internal/domain"
+	"solo-0014-zone-rollout-control/internal/store"
 )
 
 const requestLimit = 1 << 20
@@ -41,15 +43,31 @@ func decode(w http.ResponseWriter, r *http.Request, target any) error {
 	return nil
 }
 
-func sendData(w http.ResponseWriter, r *http.Request, status int, value any) {
+func (s *Server) sendData(w http.ResponseWriter, r *http.Request, status int, value any) {
 	meta := responseMeta{RequestID: requestID(r.Context())}
-	if stamp, ok := snapshotStamp(r.Context()); ok {
+	stamp, ok := stampRecorded(r.Context())
+	if !ok {
+		// The request never reached the store (for example /healthz):
+		// fall back to the stamp that is current at response time.
+		if live, err := s.plans.SnapshotStamp(r.Context()); err == nil {
+			stamp, ok = live, true
+		}
+	}
+	if ok {
 		meta.Snapshot = &stamp
 	}
 	sendJSON(w, status, successBody{
 		Data: value,
 		Meta: meta,
 	})
+}
+
+func stampRecorded(ctx context.Context) (domain.SnapshotStamp, bool) {
+	recorder := store.StampRecorderFrom(ctx)
+	if recorder == nil {
+		return domain.SnapshotStamp{}, false
+	}
+	return recorder.Stamp()
 }
 
 func sendError(w http.ResponseWriter, r *http.Request, err error) {

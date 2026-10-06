@@ -17,7 +17,7 @@ func (s *Server) assessPlan(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusCreated, result)
+	s.sendData(w, r, http.StatusCreated, result)
 }
 
 func (s *Server) latestAssessment(w http.ResponseWriter, r *http.Request) {
@@ -26,5 +26,5 @@ func (s *Server) latestAssessment(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusOK, result)
+	s.sendData(w, r, http.StatusOK, result)
 }

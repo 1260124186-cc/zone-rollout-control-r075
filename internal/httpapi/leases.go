@@ -17,7 +17,7 @@ func (s *Server) allocateLeases(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusCreated, group)
+	s.sendData(w, r, http.StatusCreated, group)
 }
 
 func (s *Server) releaseLease(w http.ResponseWriter, r *http.Request) {
@@ -26,5 +26,5 @@ func (s *Server) releaseLease(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusOK, lease)
+	s.sendData(w, r, http.StatusOK, lease)
 }

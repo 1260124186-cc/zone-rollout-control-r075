@@ -17,5 +17,5 @@ func (s *Server) submitProbe(w http.ResponseWriter, r *http.Request) {
 		sendError(w, r, err)
 		return
 	}
-	sendData(w, r, http.StatusCreated, result)
+	s.sendData(w, r, http.StatusCreated, result)
 }
